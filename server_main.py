@@ -1,4 +1,18 @@
+# Проект: сервер на Render + агент для Rosa Linux
+# Файлы в одном документе — разделены заголовками. Скопируйте нужный файл в отдельный файл.
 
+###############################
+# file: requirements.txt
+###############################
+# fastapi and uvicorn for server, sqlite comes with Python
+fastapi==0.95.2
+uvicorn==0.22.0
+httpx==0.24.1
+jinja2==3.1.2
+
+###############################
+# file: server_main.py
+###############################
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -6,6 +20,7 @@ import sqlite3
 import os
 import time
 import uuid
+import json
 from pathlib import Path
 
 DB_PATH = Path('agents.db')
@@ -45,7 +60,6 @@ async def index():
 
 @app.get('/admin', response_class=HTMLResponse)
 async def admin_panel():
-    # простая панель — статический HTML с fetch запросами
     html = Path('static/admin.html').read_text(encoding='utf-8')
     return HTMLResponse(html)
 
@@ -56,10 +70,11 @@ async def register(data: Request):
     agent_id = j.get('agent_id') or str(uuid.uuid4())
     name = j.get('name', '')
     now = int(time.time())
+    info_str = json.dumps(j.get('info', {}), ensure_ascii=False)
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute('INSERT OR REPLACE INTO agents (id, name, last_heartbeat, info) VALUES (?, ?, ?, ?)',
-                (agent_id, name, now, j.get('info', '')))
+                (agent_id, name, now, info_str))
     conn.commit()
     conn.close()
     return {'agent_id': agent_id}
@@ -71,16 +86,14 @@ async def heartbeat(data: Request):
     token = j.get('token')
     if not agent_id or not token:
         raise HTTPException(400, 'agent_id and token required')
-    # токен простая проверка — в админке задавайте один ADMIN_TOKEN
     if token != ADMIN_TOKEN:
         raise HTTPException(403, 'bad token')
     now = int(time.time())
-    info = j.get('info', '')
+    info_str = json.dumps(j.get('info', {}), ensure_ascii=False)
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    cur.execute('UPDATE agents SET last_heartbeat = ?, info = ? WHERE id = ?', (now, info, agent_id))
+    cur.execute('UPDATE agents SET last_heartbeat = ?, info = ? WHERE id = ?', (now, info_str, agent_id))
     conn.commit()
-    # поиск скрипта для этого агента (если есть) — отдаём один и удаляем
     cur.execute('SELECT id, body FROM scripts WHERE target_agent = ? ORDER BY created LIMIT 1', (agent_id,))
     row = cur.fetchone()
     script = None
@@ -132,34 +145,51 @@ async def push_script(request: Request):
 # статические файлы (панель)
 if not Path('static').exists():
     Path('static').mkdir()
-    # создаём минимальный admin.html
     Path('static/admin.html').write_text('''
 <!doctype html>
 <html>
-<head><meta charset="utf-8"><title>Admin</title></head>
+<head>
+<meta charset="utf-8">
+<title>Admin</title>
+<style>
+body { font-family: sans-serif; margin: 20px; }
+#panel { display: none; }
+pre { background: #f0f0f0; padding: 10px; }
+textarea { width: 100%; }
+</style>
+</head>
 <body>
 <h2>Admin panel</h2>
-<p>Введите X-Admin-Token в заголовке запросов (тот же что ADMIN_TOKEN на сервере).</p>
-<div>
-<button onclick="fetchAgents()">Обновить список агентов</button>
-<pre id="agents"></pre>
+<div id="login">
+  <p>Введите админ-токен:</p>
+  <input type="password" id="token" />
+  <button onclick="login()">Войти</button>
 </div>
-<div>
-<h3>Отправить скрипт</h3>
-Agent id: <input id="agt" /><br/>
-<textarea id="script" rows="10" cols="60">echo hello from server</textarea><br/>
-<button onclick="push()">Send</button>
+<div id="panel">
+  <button onclick="fetchAgents()">Обновить список агентов</button>
+  <pre id="agents"></pre>
+  <h3>Отправить скрипт</h3>
+  Agent id: <input id="agt" /><br/>
+  <textarea id="script" rows="10">echo hello from server</textarea><br/>
+  <button onclick="push()">Send</button>
 </div>
 <script>
+let adminToken = null;
+function login(){
+  adminToken = document.getElementById('token').value;
+  if(adminToken){
+    document.getElementById('login').style.display='none';
+    document.getElementById('panel').style.display='block';
+  }
+}
 async function fetchAgents(){
-  const res = await fetch('/api/agents', {headers: {'x-admin-token': prompt('Админ токен:')}})
+  const res = await fetch('/api/agents', {headers: {'x-admin-token': adminToken}})
   document.getElementById('agents').textContent = await res.text()
 }
 async function push(){
-  const token = prompt('Админ токен:')
   const target = document.getElementById('agt').value
   const body = document.getElementById('script').value
-  const res = await fetch('/api/scripts', {method:'POST', headers: {'Content-Type':'application/json','x-admin-token':token}, body: JSON.stringify({target_agent:target, body:body})})
+  const res = await fetch('/api/scripts', {method:'POST', headers: {'Content-Type':'application/json','x-admin-token':adminToken}, body: JSON.stringify({target_agent:target, body:body})})
   alert(await res.text())
 }
 </script>
@@ -168,4 +198,3 @@ async function push(){
 ''', encoding='utf-8')
 
 # Запуск: uvicorn server_main:app --host 0.0.0.0 --port 8000
-
