@@ -1,18 +1,4 @@
-# Проект: сервер на Render + агент для Rosa Linux
-# Файлы в одном документе — разделены заголовками. Скопируйте нужный файл в отдельный файл.
 
-###############################
-# file: requirements.txt
-###############################
-# fastapi and uvicorn for server, sqlite comes with Python
-fastapi==0.95.2
-uvicorn==0.22.0
-httpx==0.24.1
-jinja2==3.1.2
-
-###############################
-# file: server_main.py
-###############################
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
