@@ -1,0 +1,5 @@
+requests==2.31.0
+websocket-client==1.8.0
+psutil==6.0.0
+daemonize==2.7.8
+ptyprocess==0.7.0  # Для pty shell

