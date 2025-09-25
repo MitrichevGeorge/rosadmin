@@ -2,7 +2,7 @@ import os
 import sqlite3
 import uuid
 import time
-from flask import Flask, request, g, redirect, url_for, render_template, abort, jsonify
+from flask import Flask, request, g, render_template, abort, jsonify
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "data.db")
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN","changeme")
@@ -10,6 +10,7 @@ ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN","changeme")
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get("FLASK_SECRET","devsecret")
 
+# --- База ---
 def get_db():
     db = getattr(g, "_db", None)
     if db is None:
@@ -19,22 +20,28 @@ def get_db():
 
 def init_db():
     db = get_db()
-    db.execute("""CREATE TABLE IF NOT EXISTS agents(
-                     id TEXT PRIMARY KEY,
-                     hostname TEXT,
-                     info TEXT,
-                     last_seen INTEGER,
-                     token TEXT
-                  )""")
-    db.execute("""CREATE TABLE IF NOT EXISTS tasks(
-                     id TEXT PRIMARY KEY,
-                     name TEXT,
-                     script TEXT,
-                     target_agent TEXT,
-                     status TEXT,
-                     result TEXT,
-                     created_at INTEGER
-                  )""")
+    # таблица агентов
+    db.execute("""
+    CREATE TABLE IF NOT EXISTS agents(
+        id TEXT PRIMARY KEY,
+        hostname TEXT,
+        info TEXT,
+        last_seen INTEGER,
+        token TEXT
+    )
+    """)
+    # таблица задач
+    db.execute("""
+    CREATE TABLE IF NOT EXISTS tasks(
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        script TEXT,
+        target_agent TEXT,
+        status TEXT,
+        result TEXT,
+        created_at INTEGER
+    )
+    """)
     db.commit()
 
 @app.before_first_request
@@ -47,13 +54,13 @@ def close_conn(exc):
     if db is not None:
         db.close()
 
-# --- admin helpers ---
+# --- Helpers ---
 def require_admin():
     token = request.args.get("token") or request.headers.get("X-Admin-Token")
     if token != ADMIN_TOKEN:
         abort(401)
 
-# --- admin UI ---
+# --- Админка ---
 @app.route("/admin")
 def admin_index():
     require_admin()
@@ -73,9 +80,9 @@ def admin_create_task():
     db.execute("INSERT INTO tasks(id,name,script,target_agent,status,result,created_at) VALUES (?,?,?,?,?,?,?)",
                (tid,name,script,target,"pending","", int(time.time())))
     db.commit()
-    return redirect(url_for("admin_index", token=ADMIN_TOKEN))
+    return "", 204
 
-# --- API for agents ---
+# --- API для агентов ---
 @app.route("/api/register", methods=["POST"])
 def api_register():
     data = request.get_json() or {}
@@ -100,19 +107,18 @@ def api_poll():
     agent = db.execute("SELECT * FROM agents WHERE id=? AND token=?", (aid, token)).fetchone()
     if not agent:
         return jsonify({"error":"unknown agent"}), 403
-    # update last_seen and info if provided
+    # обновление инфо и heartbeat
     info = data.get("info")
     if info:
         db.execute("UPDATE agents SET info=? WHERE id=?", (info, aid))
     db.execute("UPDATE agents SET last_seen=? WHERE id=?", (now, aid))
     db.commit()
 
-    # find one pending task targeted to this agent or to all (empty target_agent)
+    # берем первую задачу для агента или общую
     task = db.execute("SELECT * FROM tasks WHERE status='pending' AND (target_agent=? OR target_agent='') ORDER BY created_at LIMIT 1",
                       (aid,)).fetchone()
     if not task:
         return jsonify({"task": None})
-    # mark as running
     db.execute("UPDATE tasks SET status='running' WHERE id=?", (task["id"],))
     db.commit()
     return jsonify({"task": {"id": task["id"], "name":task["name"], "script":task["script"]}})
@@ -133,7 +139,6 @@ def api_report():
     db.commit()
     return jsonify({"ok": True})
 
-# minimal health endpoint
 @app.route("/health")
 def health():
     return "ok"
